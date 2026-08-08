@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: stg_games
+    description: Cleaned, typed game records ready for downstream marts.
+    columns:
+      - name: game_id
+        tests:
+          - unique
+          - not_null
+      - name: league
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['nfl', 'nba', 'mlb']

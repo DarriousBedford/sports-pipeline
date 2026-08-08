@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: fct_games
+    description: One row per completed game, with winner and margin computed.
+    columns:
+      - name: game_id
+        tests:
+          - unique
+          - not_null
+      - name: winning_team
+        description: Null when the game ended in a tie (rare, but valid in NFL/MLB).
+
+  - name: int_team_game_log
+    description: One row per team per game (unpivoted from fct_games). Feeds both agg_team_record and agg_scoring_trends.
+    columns:
+      - name: team
+        tests:
+          - not_null
+
+  - name: agg_team_record
+    description: Win/loss record and average scoring per team per league.
+    columns:
+      - name: win_pct
+        description: Should always fall between 0 and 1 inclusive.
+
+  - name: agg_scoring_trends
+    description: Trailing 5-game rolling scoring average per team, for hot/cold streak analysis.

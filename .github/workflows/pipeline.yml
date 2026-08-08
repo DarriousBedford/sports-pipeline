@@ -1,0 +1,39 @@
+name: Sports Pipeline
+
+on:
+  schedule:
+    - cron: "0 11 * * *"   # daily at 11:00 UTC, after most previous-day games are final
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: "How many days of games to pull"
+        default: "1"
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      BQ_DATASET: sports_analytics
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-key.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write GCP service account key
+        run: echo '${{ secrets.GCP_SA_KEY }}' > gcp-key.json
+
+      - name: Run Prefect flow
+        run: python orchestration/flow.py --days-back "${{ github.event.inputs.days_back || '1' }}"
+
+      - name: Clean up key file
+        if: always()
+        run: rm -f gcp-key.json

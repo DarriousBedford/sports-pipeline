@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: sports_analytics
+    tables:
+      - name: raw_games
+        description: Raw game records loaded by extract/load_to_bigquery.py.
+        columns:
+          - name: game_id
+            tests:
+              - unique
+              - not_null

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+gcp-key.json
+*.json
+!tests/**/*.json
+dbt/sports_analytics/target/
+dbt/sports_analytics/dbt_packages/
+dbt/sports_analytics/logs/
+.DS_Store
