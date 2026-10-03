@@ -5,9 +5,11 @@ sources:
     schema: sports_analytics
     tables:
       - name: raw_games
-        description: Raw game records loaded by extract/load_to_bigquery.py.
+        description: >
+          Raw game records loaded by extract/load_to_bigquery.py.
+          Append-only: the same game_id can appear multiple times (one row per load).
+          Deduped to one row per game in stg_games.
         columns:
           - name: game_id
             tests:
-              - unique
               - not_null
