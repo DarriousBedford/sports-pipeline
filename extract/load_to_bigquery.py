@@ -1,39 +1,23 @@
 """
-Loads games JSON into `raw.games` in BigQuery.
+Loads games JSON into `raw_games` in BigQuery.
 
-Idempotent by design: loads into a staging table then MERGEs into the raw
-table on game_id, so re-running for the same date range (e.g. a retried
-Actions run) never creates duplicates -- important since games can also be
-re-fetched to pick up final scores after a game finishes.
+Append-only by design: every run appends rows with a `loaded_at` timestamp.
+Re-fetched games (e.g. to pick up final scores) create additional rows;
+dbt's stg_games model dedupes to the latest row per game_id.
+
+(Uses a load job instead of MERGE because the BigQuery sandbox blocks DML.)
 """
 
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 
 from google.cloud import bigquery
 
 PROJECT = os.environ.get("GCP_PROJECT_ID")
 DATASET = os.environ.get("BQ_DATASET", "sports_analytics")
 RAW_TABLE = f"{DATASET}.raw_games"
-STAGING_TABLE = f"{DATASET}.raw_games_staging"
-
-MERGE_SQL = f"""
-MERGE `{PROJECT}.{RAW_TABLE}` T
-USING `{PROJECT}.{STAGING_TABLE}` S
-ON T.game_id = S.game_id
-WHEN MATCHED THEN
-  UPDATE SET
-    status = S.status,
-    home_score = S.home_score,
-    away_score = S.away_score,
-    loaded_at = CURRENT_TIMESTAMP()
-WHEN NOT MATCHED THEN
-  INSERT (game_id, league, game_date, status, home_team, home_score,
-          away_team, away_score, venue, loaded_at)
-  VALUES (S.game_id, S.league, S.game_date, S.status, S.home_team, S.home_score,
-          S.away_team, S.away_score, S.venue, CURRENT_TIMESTAMP())
-"""
 
 
 def load(json_path: str) -> int:
@@ -46,13 +30,14 @@ def load(json_path: str) -> int:
         print("No rows to load.")
         return 0
 
-    # Load into a fresh staging table (truncate-and-replace each run).
-    # Schema is spelled out explicitly rather than using autodetect=True --
-    # game_id values look like pure numbers (e.g. "401816352"), so
-    # autodetect infers INT64 instead of STRING, which then breaks the
-    # MERGE below when comparing against raw_games' STRING game_id column.
+    # Stamp each row (MERGE used to do this with CURRENT_TIMESTAMP()).
+    loaded_at = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        row["loaded_at"] = loaded_at
+
+    # Explicit schema: game_id looks numeric, so autodetect would wrongly infer INT64.
     job_config = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         schema=[
             bigquery.SchemaField("game_id", "STRING"),
             bigquery.SchemaField("league", "STRING"),
@@ -63,17 +48,15 @@ def load(json_path: str) -> int:
             bigquery.SchemaField("away_team", "STRING"),
             bigquery.SchemaField("away_score", "INT64"),
             bigquery.SchemaField("venue", "STRING"),
+            bigquery.SchemaField("loaded_at", "TIMESTAMP"),
         ],
     )
     load_job = client.load_table_from_json(
-        rows, f"{PROJECT}.{STAGING_TABLE}", job_config=job_config,
+        rows, f"{PROJECT}.{RAW_TABLE}", job_config=job_config,
     )
     load_job.result()
 
-    # Merge staging -> raw so re-runs update scores instead of duplicating rows.
-    client.query(MERGE_SQL).result()
-
-    print(f"Merged {len(rows)} rows into {RAW_TABLE}")
+    print(f"Appended {len(rows)} rows to {RAW_TABLE}")
     return len(rows)
 
 

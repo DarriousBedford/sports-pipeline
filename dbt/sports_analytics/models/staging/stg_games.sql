@@ -1,5 +1,11 @@
 with source as (
     select * from {{ source('raw', 'raw_games') }}
+    -- raw_games is append-only (the loader no longer MERGEs), so the same
+    -- game can appear multiple times. Keep only the most recent load per game.
+    qualify row_number() over (
+        partition by game_id
+        order by loaded_at desc
+    ) = 1
 ),
 
 parsed as (
